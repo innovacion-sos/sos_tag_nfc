@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/api/:action", "destination": "/api/index?action=:action" },
+    { "source": "/t/:id", "destination": "/t.html" },
+    { "source": "/crear", "destination": "/crear.html" },
+    { "source": "/assets/:file", "destination": "/:file" }
+  ]
+}

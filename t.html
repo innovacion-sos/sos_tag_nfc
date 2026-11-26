@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOS TAG NFC — Ficha de emergencia</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/style.css">
+<style>
+body{background:var(--bg)}
+.top{background:var(--ink);color:#fff;padding:14px 5vw;display:flex;justify-content:space-between;align-items:center;font-weight:900}
+.top span{color:var(--red)}.top em{font-style:normal;background:var(--red);font-size:12px;padding:5px 12px;border-radius:99px}
+.wrap{max-width:860px;margin:20px auto;padding:0 14px}
+.ficha{animation:none;margin-top:0}
+.call{background:var(--ok);color:#fff;text-decoration:none;font-weight:700;padding:8px 16px;border-radius:10px;float:right}
+.alert button{margin-left:10px;border:0;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer}
+.alert.err{background:#b45309}
+.foot{text-align:center;color:var(--mut);font-size:13px;margin:14px 0}
+</style>
+</head>
+<body>
+<div class="top"><div>SOS <span>TAG</span> NFC</div><em>FICHA DE EMERGENCIA</em></div>
+<div class="wrap"><div class="ficha" id="root">Cargando ficha…</div><div class="foot" id="foot"></div></div>
+<script>
+const id = decodeURIComponent(location.pathname.split('/').pop());
+const root = document.getElementById('root');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chips = (a, cls = '') => `<p class="chips ${cls}">${a.map(x => `<span>${esc(x)}</span>`).join('')}</p>`;
+
+fetch('/api/tag?id=' + encodeURIComponent(id))
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(render)
+  .catch(() => root.textContent = 'Tag no encontrado o no activo.');
+
+function render(p) {
+  const ini = p.name.split(' ').slice(0, 2).map(w => w[0]).join('');
+  root.innerHTML = `
+  <div class="ficha-head"><div class="avatar">${esc(ini)}</div>
+    <div><h3>${esc(p.name)}</h3><p>${[p.age ? p.age + ' años' : '', p.role, p.city].filter(Boolean).map(esc).join(' · ')}</p></div>
+    <div class="blood"><small>TIPO DE SANGRE</small><b>${esc(p.blood)}</b></div></div>
+  <div class="ficha-body"><div>
+    <h4>Alergias</h4>${chips(p.allergies, 'r')}
+    <h4>Padecimientos</h4>${chips(p.conditions)}
+    <h4>Medicamentos</h4>${chips(p.meds)}</div>
+  <div><h4>Contactos de emergencia</h4><ul class="contacts">
+    ${p.contacts.map(c => `<li><a class="call" href="tel:${esc(c.tel)}">Llamar</a><b>${esc(c.name)}</b><small>${esc(c.rel)} · Notificado</small></li>`).join('')}
+    ${p.insurance ? `<li><b>${esc(p.insurance.name)}</b><small>${p.insurance.policy ? 'Póliza #' + esc(p.insurance.policy) : 'Seguro'}</small></li>` : ''}
+  </ul></div></div>
+  <div class="alert" id="alert"></div>`;
+  document.getElementById('foot').textContent = 'Leído vía NFC/QR · SOS TAG NFC';
+  sendAlert();
+}
+
+function setAlert(txt, cls, retry) {
+  const a = document.getElementById('alert');
+  a.className = 'alert ' + (cls || '');
+  a.textContent = txt;
+  if (retry) { const b = document.createElement('button'); b.textContent = 'Reintentar'; b.onclick = sendAlert; a.append(b); }
+}
+
+function getPos() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }),
+      () => res(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+  });
+}
+
+async function sendAlert() {
+  setAlert('📍 Obteniendo ubicación y avisando a los contactos…');
+  const pos = await getPos();           // el navegador pide permiso de ubicación una vez
+  try {
+    const r = await fetch('/api/tag', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...pos }) });
+    let d = {}; try { d = await r.json(); } catch {}
+    if (!r.ok) throw new Error('HTTP ' + r.status + (d.error ? ': ' + d.error : ''));
+    if (d.throttled) return setAlert('✅ Los contactos ya fueron avisados hace unos minutos.', 'sent');
+    setAlert(`✅ Alerta enviada a ${d.sent} de ${d.total} contactos${pos ? ' con ubicación GPS' : ' (sin ubicación: GPS no permitido)'}${d.dry ? ' · MODO PRUEBA' : ''}`, 'sent');
+  } catch (e) { setAlert('⚠️ No se pudo enviar la alerta (' + e.message + '). Llama directamente a un contacto.', 'err', true); }
+}
+</script>
+</body>
+</html>
